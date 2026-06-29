@@ -65,7 +65,9 @@
   .pk-sec-h{font-size:13px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
     font-weight:700;margin-bottom:12px;}
 
-  .pk-row{display:flex;align-items:center;gap:12px;padding:11px 0;}
+  .pk-row{display:flex;align-items:center;gap:12px;padding:11px 0;cursor:pointer;transition:opacity .1s ease;}
+  .pk-row:active{opacity:.6;}
+  .pk-seeall{text-transform:none;letter-spacing:0;font-weight:700;color:var(--violet);cursor:pointer;font-size:12.5px;}
   .pk-emoji{width:38px;height:38px;border-radius:12px;display:grid;place-items:center;font-size:18px;flex:none;}
   .pk-rowmid{flex:1;min-width:0;}
   .pk-rowtop{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
@@ -186,6 +188,15 @@ function relDay(ts){
   return d.toLocaleDateString("en-MY", { day:"numeric", month:"short" });
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+function txRowHtml(t){
+  const ci = catInfo(t);
+  const isIn = t.type==="income";
+  return '<div class="pk-tx"><div class="pk-emoji" style="background:'+ci.color+'1F">'+ci.emoji+'</div>'+
+    '<div class="pk-txmid"><div class="pk-txname">'+esc(t.note || ci.label)+'</div>'+
+    '<div class="pk-txmeta">'+ci.label+' · '+relDay(t.ts)+'</div></div>'+
+    '<span class="pk-txamt'+(isIn?' in':'')+'">'+(isIn?'+ ':'')+CUR+' '+fmt(t.amount)+'</span>'+
+    '<button class="pk-del" data-del="'+t.id+'" aria-label="delete">×</button></div>';
+}
 const todayStr = () => { const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); };
 function tsForDate(dateStr){
   const sel = new Date(dateStr+"T00:00:00");
@@ -246,7 +257,7 @@ function render(){
     body = '<div class="pk-sec"><div class="pk-sec-h">where it goes</div>'+
       byCat.map(c=>{
         const pct=(c.amt/out)*100;
-        return '<div class="pk-row"><div class="pk-emoji" style="background:'+CATS[c.cat].color+'1F">'+CATS[c.cat].emoji+'</div>'+
+        return '<div class="pk-row" data-cat-row="'+c.cat+'"><div class="pk-emoji" style="background:'+CATS[c.cat].color+'1F">'+CATS[c.cat].emoji+'</div>'+
           '<div class="pk-rowmid"><div class="pk-rowtop"><span class="pk-cat">'+CATS[c.cat].label+'</span>'+
           '<span class="pk-amt">'+CUR+' '+fmt(c.amt)+'</span></div>'+
           '<div class="pk-bar"><i data-w="'+pct+'%" style="background:'+CATS[c.cat].color+'"></i></div></div>'+
@@ -256,16 +267,9 @@ function render(){
 
   let recentHtml = "";
   if (recent.length){
-    recentHtml = '<div class="pk-sec"><div class="pk-sec-h">recent</div>'+
-      recent.map(t=>{
-        const ci = catInfo(t);
-        const isIn = t.type==="income";
-        return '<div class="pk-tx"><div class="pk-emoji" style="background:'+ci.color+'1F">'+ci.emoji+'</div>'+
-          '<div class="pk-txmid"><div class="pk-txname">'+esc(t.note || ci.label)+'</div>'+
-          '<div class="pk-txmeta">'+ci.label+' · '+relDay(t.ts)+'</div></div>'+
-          '<span class="pk-txamt'+(isIn?' in':'')+'">'+(isIn?'+ ':'')+CUR+' '+fmt(t.amount)+'</span>'+
-          '<button class="pk-del" data-del="'+t.id+'" aria-label="delete">×</button></div>';
-      }).join('')+'</div>';
+    recentHtml = '<div class="pk-sec"><div class="pk-sec-h" style="display:flex;justify-content:space-between;align-items:center;">recent'+
+      (txns.length>recent.length ? '<span class="pk-seeall" id="seeAllBtn">See all →</span>' : '')+
+      '</div>'+ recent.map(txRowHtml).join('') +'</div>';
   }
 
   document.getElementById("app").innerHTML =
@@ -279,6 +283,9 @@ function render(){
 
   requestAnimationFrame(()=>{ document.querySelectorAll('[data-w]').forEach(el=>{ el.style.width = el.dataset.w; }); });
   document.querySelectorAll('[data-del]').forEach(b=> b.onclick = ()=>{ txns = txns.filter(t=>t.id!==b.dataset.del); save(); render(); });
+  document.querySelectorAll('[data-cat-row]').forEach(el=> el.onclick = ()=> openCategoryDetail(el.dataset.catRow));
+  const seeAllBtn = document.getElementById("seeAllBtn");
+  if (seeAllBtn) seeAllBtn.onclick = openAllTransactions;
 }
 
 /* ── add sheet ── */
@@ -311,6 +318,40 @@ function openAdd(){
   renderChips(scrim); updateSheet(scrim);
 }
 function closeAdd(scrim){ scrim.remove(); document.body.style.overflow = ""; }
+
+function openDetailSheet(titleHtml, list){
+  const scrim = document.createElement("div");
+  scrim.className = "pk-scrim";
+  scrim.innerHTML =
+    '<div class="pk-sheet" style="max-height:80vh;overflow-y:auto;"><div class="pk-grab"></div>'+
+    titleHtml+
+    (list.length ? list.map(txRowHtml).join('') : '<div class="pk-empty"><p>Nothing here yet.</p></div>')+
+    '</div>';
+  document.body.appendChild(scrim);
+  document.body.style.overflow = "hidden";
+  scrim.addEventListener("click", e=>{ if (e.target===scrim) closeAdd(scrim); });
+  scrim.querySelectorAll("[data-del]").forEach(b=> b.onclick = ()=>{
+    txns = txns.filter(t=>t.id!==b.dataset.del); save(); closeAdd(scrim); render();
+  });
+}
+function openCategoryDetail(cat){
+  const now = new Date();
+  const inMonth = (t)=>{ const d=new Date(t.ts); return d.getMonth()===now.getMonth() && d.getFullYear()===now.getFullYear(); };
+  const list = txns.filter(t=>t.type==="expense" && t.cat===cat && inMonth(t)).sort((a,b)=>b.ts-a.ts);
+  const total = list.reduce((s,t)=>s+t.amount,0);
+  const info = CATS[cat];
+  const title = '<div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">'+
+    '<div class="pk-emoji" style="background:'+info.color+'1F">'+info.emoji+'</div>'+
+    '<div><div style="font-weight:800;font-size:17px;">'+info.label+'</div>'+
+    '<div style="color:var(--muted);font-size:12.5px;font-weight:600;">'+CUR+' '+fmt(total)+' this month · '+list.length+' transaction'+(list.length!==1?'s':'')+'</div></div></div>';
+  openDetailSheet(title, list);
+}
+function openAllTransactions(){
+  const list = [...txns].sort((a,b)=>b.ts-a.ts);
+  const title = '<div style="font-weight:800;font-size:17px;margin-bottom:6px;">All transactions</div>'+
+    '<div style="color:var(--muted);font-size:12.5px;font-weight:600;margin-bottom:4px;">'+list.length+' total</div>';
+  openDetailSheet(title, list);
+}
 
 function renderChips(scrim){
   const keys = mode==="income" ? INCOME_KEYS : CAT_KEYS;
