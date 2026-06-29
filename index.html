@@ -112,6 +112,11 @@
   .pk-note{width:100%;border:1px solid var(--line);background:#FAF8FC;border-radius:14px;
     padding:12px 14px;font-size:16px;font-family:inherit;color:var(--ink);margin:8px 0 14px;outline:none;}
   .pk-note:focus{border-color:#D7CCF5;background:#fff;}
+  .pk-daterow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    border:1px solid var(--line);background:#FAF8FC;border-radius:14px;padding:10px 14px;margin-bottom:10px;}
+  .pk-datelabel{font-size:13px;font-weight:700;color:#5b5470;display:flex;align-items:center;gap:6px;}
+  .pk-dateinput{border:none;background:none;font-family:inherit;font-size:14px;font-weight:600;
+    color:var(--ink);text-align:right;outline:none;}
   .pk-chips{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:14px;}
   .pk-chip{display:flex;flex-direction:column;align-items:center;gap:3px;border:1.5px solid var(--line);
     background:#fff;border-radius:14px;padding:11px 4px;cursor:pointer;font-family:inherit;
@@ -181,6 +186,13 @@ function relDay(ts){
   return d.toLocaleDateString("en-MY", { day:"numeric", month:"short" });
 }
 const esc = (s) => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const todayStr = () => { const d=new Date(); const p=n=>String(n).padStart(2,"0"); return d.getFullYear()+"-"+p(d.getMonth()+1)+"-"+p(d.getDate()); };
+function tsForDate(dateStr){
+  const sel = new Date(dateStr+"T00:00:00");
+  const now = new Date();
+  sel.setHours(now.getHours(), now.getMinutes(), now.getSeconds(), now.getMilliseconds());
+  return sel.getTime();
+}
 
 function compute(){
   const now = new Date();
@@ -270,14 +282,15 @@ function render(){
 }
 
 /* ── add sheet ── */
-let amountStr = "", noteVal = "", mode = "expense";
+let amountStr = "", noteVal = "", mode = "expense", dateVal = "";
 function openAdd(){
-  amountStr = ""; noteVal = ""; mode = "expense";
+  amountStr = ""; noteVal = ""; mode = "expense"; dateVal = todayStr();
   const scrim = document.createElement("div");
   scrim.className = "pk-scrim";
   scrim.innerHTML =
     '<div class="pk-sheet"><div class="pk-grab"></div>'+
     '<div class="pk-seg2"><button data-mode="expense" class="on">Expense</button><button data-mode="income">Income</button></div>'+
+    '<div class="pk-daterow"><span class="pk-datelabel">📅 Date</span><input type="date" class="pk-dateinput" id="dateInput" value="'+dateVal+'" max="'+todayStr()+'" /></div>'+
     '<div class="pk-amtbox"><span class="cur">'+CUR+'</span><span class="val ph" id="amtVal">0</span></div>'+
     '<input class="pk-note" id="noteInput" placeholder="What was it? (optional)" maxlength="40" />'+
     '<div class="pk-chips" id="chips"></div>'+
@@ -288,6 +301,7 @@ function openAdd(){
 
   scrim.addEventListener("click", e=>{ if (e.target===scrim) closeAdd(scrim); });
   scrim.querySelector("#noteInput").addEventListener("input", e=> noteVal = e.target.value);
+  scrim.querySelector("#dateInput").addEventListener("change", e=> dateVal = e.target.value || todayStr());
   scrim.querySelectorAll("[data-key]").forEach(b=> b.onclick = ()=>{ press(b.dataset.key); updateSheet(scrim); });
   scrim.querySelectorAll("[data-mode]").forEach(b=> b.onclick = ()=>{
     mode = b.dataset.mode;
@@ -332,7 +346,8 @@ function updateSheet(scrim){
 function commit(cat, scrim){
   const amt = parseFloat(amountStr || "0");
   if (!(amt>0)) return;
-  txns.unshift({ id: Date.now()+"-"+Math.random().toString(36).slice(2,6), amount: amt, cat, type: mode, note: noteVal.trim(), ts: Date.now() });
+  const ts = tsForDate(dateVal || todayStr());
+  txns.unshift({ id: Date.now()+"-"+Math.random().toString(36).slice(2,6), amount: amt, cat, type: mode, note: noteVal.trim(), ts });
   save(); closeAdd(scrim); render();
 }
 
